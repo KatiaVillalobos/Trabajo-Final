@@ -1,0 +1,244 @@
+---
+title: "Trabajo Final"
+author: "Katia Isabella Villalobos Carlos"
+date: "2024-02-20"
+output: html_document
+---
+
+```{r message=FALSE, warning=FALSE}
+library(psych)
+library(tidyverse)
+library(ggrepel)
+library(factoextra)
+```
+
+```{r}
+library(readxl)
+violencia <- read_excel("violencia.xlsx")
+View(violencia)
+```
+
+# Análisis Factorial Exploratorio
+
+```{r}
+colnames(violencia)= c("Pais","PBI","IDH", "tasa_alfab",
+                  "tasa_desempleo", "voz_politica",
+                  "auto_repro", "lib_mov", "acceso_finan", "justicia","derechos")
+
+subdata <- violencia |> select(2:4,7:11)
+head(subdata)
+```
+
+## PASO 1: Análisis exploratorio de datos
+
+### 1.1. Summary y análisis visual
+
+omitimos los datos perdidos:
+```{r}
+subdata = na.omit(subdata) 
+```
+
+
+Hacemos un análisis de correlación:
+
+```{r}
+matrixcor<-cor(subdata)
+matrixcor
+```
+
+```{r}
+cor.plot(matrixcor)
+```
+
+```{r}
+library(ggcorrplot)
+ggcorrplot(matrixcor,colors = c("#ff0000", "white", "#0000ff"))
+```
+
+## PASO 2: Verificación de supuestos sobre la matrixcor
+
+### 2.1. Kaiser-Meyer-Olkin (KMO)
+
+-   Midel el nivel de correlación global en nuestra data.
+
+-   KMO devuelve valores entre 0 y 1. Queremos que salga lo más cercano al 1.
+
+-   Recomendable a partir de 0.6. Ojo, referencial.
+
+```{r}
+psych::KMO(subdata) # Vemos el Overall MSA =  0.76
+```
+
+### 2.2 Prueba de Esfericidad de Bartlett
+
+-   La matriz de correlaciones NO debe ser una matriz de identidad.
+
+-   Esto quiere decir que tendrá 1 en la diagonal y todo lo demás será 0, lo que indicaría que no hay asociación entre las variables.
+
+Realizamos una prueba de hipótesis. Debemos preguntarnos, el p-value es menor a 0.05? (escenario deseable)
+
+```{r}
+cortest.bartlett(matrixcor,n=dim(subdata)[1])
+```
+
+Vemos el p-valor y lo aplicamos sobre las siguientes hipótesis:
+
+H0: Es una matriz de identidad (Las variables analizadas NO están correlacionadas en la muestra).
+
+H1: No es una matriz de identidad (Las variables analizadas SÍ están correlacionadas en la muestra).
+
+Se rechaza la hipótesis nula, entonces no es una matriz de identidad. 
+
+
+## PASO 3: Calcular Análisis Factorial Exploratorio
+
+### 3.1 Determinación del Número de Factores que vamos a SOLICITAR
+
+Ambos métodos ayudan a identificar un número razonable de factores, equilibrando entre maximizar la varianza explicada y minimizar el número de dimensiones.
+
+```{r}
+scree(subdata, 
+      pc=FALSE, 
+      factors=TRUE)
+```
+
+O también el análisis paralelo (utiliza simulaciones con bootstrap). En este caso explícitamente nos recomienda un número de factores.
+
+```{r}
+fa.parallel(subdata,fa="fa") 
+```
+
+### 3.2 Cálculo de los factores
+
+Aplicamos el siguiente código que ejecuta un EFA en nuestra **subdata**.
+
+```{r}
+factorial <- fa(subdata,
+                nfactors = 3, 
+                rotate = "varimax", 
+                cor = 'mixed',
+                fm="minres") 
+```
+## PASO 4: Analizar el EFA calculado
+
+### 4.1 Variabilidad explicada
+
+En este caso vemos que dos factores me permiten explicar 0.5511027, es decir el **55.11% de la variabilidad original**. 
+
+```{r}
+print(factorial$Vaccounted)
+```
+
+### 4.2 Los loadings o cargas 
+
+```{r}
+print(factorial$loadings)
+```
+Podemos también VISUALIZAR con un corte a un determinado punto. Como en este caso tenemos valores alto vamos a tratar con 0.7.
+
+```{r}
+print(factorial$loadings,cutoff = 0.4)
+```
+
+
+```{r}
+fa.diagram(factorial) # cut=.3 por default y sale siempre una asociación según el mayor loading. 
+```
+
+## 5 Evaluación del EFA
+
+Root Mean Square Error of Approximation
+
+El RMSEA evalúa qué tan bien un modelo se ajusta a los datos, considerando el error de aproximación en la población. Un valor más bajo indica un mejor ajuste. Los valores típicos del RMSEA están en el rango de 0 a 1, donde valores más cercanos a 0 indican un mejor ajuste. 
+
+**Comúnmente, se considera que valores menores a 0.05 indican un buen ajuste, valores entre 0.05 y 0.08 un ajuste razonable, y valores mayores a 0.10 sugieren un pobre ajuste del modelo.**
+
+```{r}
+factorial$RMSEA
+```
+
+# Análisis por conglomerado jerárquico
+
+Abrimos paquetes que se necesitan para el análisis:
+
+```{r}
+library(pacman) 
+p_load(rio, cluster, factoextra, tidyverse, ggrepel, scatterplot3d) 
+```
+
+```{r}
+subdata2 <- data.frame(violencia, row.names = 'Pais')
+```
+
+```{r}
+subdata2 <- subdata2 |> select(5,6,9)
+subdata2 = na.omit(subdata2) 
+```
+
+
+## PASO 1: Cálculo
+
+### 1.1. Calculamos las distancias
+
+```{r}
+distancias= daisy(subdata2, metric="gower")
+```
+
+```{r}
+fviz_nbclust(subdata2, hcut,diss=distancias,method = "gap_stat",k.max = 10,verbose = F)
+```
+
+A partir del gráfico observamos que el número sugerido de clusters es 5.
+
+B.En base al resultado de la pregunta A, aplique un algoritmo de clusterización jerárquico aglomerativo y divisivo. (2 puntos)
+
+```{r}
+aglomerativo = hcut(distancias, k = 3,hc_func='agnes',hc_method = "ward.D") 
+#Indicamos 5 para visualizar
+```
+
+```{r}
+divisivo = hcut(distancias, k = 3,hc_func='diana')
+#Indicamos 5 para visualizar
+```
+
+## PASO 2: Validación e identificación de casos mal clasificados
+
+### 2.1. Gráfico de silueta
+```{r}
+fviz_silhouette(aglomerativo, label=TRUE)
+```
+
+```{r}
+fviz_silhouette(divisivo, label=TRUE)
+```
+
+### 2.2. Vemos los casos con tendencia negativa
+```{r}
+aglomerativo$silinfo$widths %>% data.frame() %>% filter(sil_width<0)
+```
+
+
+```{r}
+divisivo$silinfo$widths %>% data.frame() %>% filter(sil_width<0)
+```
+
+## PASO 3: Visualización
+
+### 3.1. Dendograma
+```{r}
+fviz_dend(divisivo, 
+          rect = TRUE, 
+          cex = 0.5)
+```
+
+```{r}
+subdata2$grupos <- divisivo$cluster
+```
+
+```{r}
+subdata2 |> 
+  group_by(grupos) |> 
+  summarise_at(vars("voz_politica":"justicia"), mean)
+```
+
