@@ -1,0 +1,430 @@
+---
+title: "Trabajo Final"
+author: "Katia Isabella Villalobos Carlos"
+date: "2024-02-20"
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r message=FALSE, warning=FALSE}
+library(psych)
+library(tidyverse)
+library(ggrepel)
+library(factoextra)
+library(rio)
+```
+
+Abrir las bases de datos:
+```{r message=FALSE}
+data_violencia <- import("https://github.com/KatiaVillalobos/Trabajo-Final/raw/main/violencia.xlsx")
+corrupcion <-import("https://github.com/KatiaVillalobos/Trabajo-Final/raw/main/cpi.csv", header = TRUE)
+Gender <- import("https://github.com/KatiaVillalobos/Trabajo-Final/raw/main/P_Data_Extract_From_Gender_Statistics.xlsx")
+```
+
+Limpieza de datos:
+```{r}
+data_violencia$PBI = round(data_violencia$PBI, 2)
+data_violencia$`Unemployment, female` = round(data_violencia$`Unemployment, female`, 2)
+
+corrupcion <- corrupcion[, c(1, 4)]
+
+names(corrupcion)[names(corrupcion) == "2022"] <- "corrup_percep"
+names(corrupcion)[names(corrupcion) == "Country / Territory"] <- "Country Name"
+
+# Creamo índice de desigualdad de género 
+
+Gender$Indice = rowMeans(Gender[, 2:15], na.rm=TRUE)
+Gender$Indice = (Gender$Indice)*100
+
+Gender[,-c(1,16)] = NULL
+
+Gender[,2]= replace(Gender[,2], Gender[,2] == "NaN",NA)
+
+Gender$Indice = round(Gender$Indice, 2)
+```
+
+Merged
+```{r}
+violencia <- merge(Gender, data_violencia, by = "Country Name")
+violencia <- merge(corrupcion, violencia, by = "Country Name")
+```
+
+```{r}
+colnames(violencia)= c("Pais","corrupcion", "Ind_desigualdad","PBI","IDH", "tasa_alfab",
+                  "tasa_desempleo", "voz_politica",
+                  "auto_repro", "lib_mov", "acceso_finan", "justicia","derechos_lab")
+names(violencia)
+
+library(Hmisc)
+label(violencia$corrupcion)<-"Percepción de corrupción"
+label(violencia$Ind_desigualdad)<-"Indice de desigualdad de género"
+label(violencia$PBI)<-"Producto Bruto Intero per cápita"
+label(violencia$IDH)<-"Indice de desarrollo humano"
+label(violencia$tasa_alfab)<-"Tasa de alfabetización"
+label(violencia$tasa_desempleo)<-"Tasa de desempleo"
+label(violencia$voz_politica)<-"Voz política"
+label(violencia$auto_repro)<-"Autonomía reproductiva"
+label(violencia$lib_mov)<-"Libertad de movimiento"
+label(violencia$acceso_finan)<-"Acceso a servicios financieros formales"
+label(violencia$justicia)<-"Acceso a justicia"
+label(violencia$derechos_lab)<-"Derechos laborales"
+
+subdata <- violencia |> select(2:6,10,11,13)
+head(subdata)
+```
+
+Gráfico de mapa:
+```{r message=FALSE}
+library(tmap)
+
+data("World")
+
+world_map_data <- merge(World, Gender, by.x = "name", by.y = "Country Name", all.x = TRUE)
+
+tm_shape(world_map_data) +
+  tm_polygons("Indice", title = "Índice", palette = "Blues", style = "quantile") +
+  tm_text("name", size = 0.4, root = 1) +
+  tm_layout(main.title = "Percepción de desigualdad de género",
+            bg.color = "lightblue") +
+  tm_basemap(server = "Stamen.TonerLite")
+
+```
+
+```{r}
+south_america <- subset(World, continent == "South America")
+```
+
+```{r}
+south_america_data <- merge(south_america, Gender, by.x = "name", by.y = "Country Name", all.x = TRUE)
+
+# Crea el mapa interactivo de América del Sur
+tm_shape(south_america_data) +
+  tm_polygons("Indice", title = "Indice", palette = "Greens", style = "quantile") +
+  tm_text("name", size = 0.9, root = 1) +  
+  tm_layout(main.title = "Desigualdad de género",
+            bg.color = "lightblue1") +
+  tm_basemap(server = "Stamen.TonerLite") 
+```
+
+```{r warning=FALSE}
+library(ggplot2)
+
+ggplot(violencia, aes(x = lib_mov, y = voz_politica, label = Pais)) +
+  geom_point() +
+  geom_text_repel(aes(label = Pais), size = 3)+
+  labs(x = "Libertad de Movimiento", y = "Voz Política") +
+  ggtitle("Relación entre Libertad de Movimiento y Voz Política")+
+  geom_point(data=violencia |> filter(Pais=="Peru"), 
+             aes(x=lib_mov,y=voz_politica, label= Pais), 
+             color='red',
+             size=3) +
+  theme_classic()
+```
+
+
+# Análisis Factorial Exploratorio
+
+## PASO 1: Análisis exploratorio de datos
+
+### 1.1. Summary y análisis visual
+
+omitimos los datos perdidos:
+```{r}
+subdata = na.omit(subdata) 
+```
+
+Hacemos un análisis de correlación:
+```{r}
+matrixcor<-cor(subdata)
+matrixcor
+```
+
+```{r}
+cor.plot(matrixcor)
+```
+
+```{r}
+library(ggcorrplot)
+ggcorrplot(matrixcor,colors = c("#ff0000", "white", "#0000ff"))
+```
+
+## PASO 2: Verificación de supuestos sobre la matrixcor
+
+### 2.1. Kaiser-Meyer-Olkin (KMO)
+
+```{r}
+psych::KMO(subdata) # Vemos el Overall MSA =  0.78
+```
+
+### 2.2 Prueba de Esfericidad de Bartlett
+
+-   La matriz de correlaciones NO debe ser una matriz de identidad.
+
+-   Esto quiere decir que tendrá 1 en la diagonal y todo lo demás será 0, lo que indicaría que no hay asociación entre las variables.
+
+Realizamos una prueba de hipótesis. Debemos preguntarnos, el p-value es menor a 0.05? (escenario deseable)
+
+```{r}
+cortest.bartlett(matrixcor,n=dim(subdata)[1])
+```
+
+Vemos el p-valor y lo aplicamos sobre las siguientes hipótesis:
+
+H0: Es una matriz de identidad (Las variables analizadas NO están correlacionadas en la muestra).
+
+H1: No es una matriz de identidad (Las variables analizadas SÍ están correlacionadas en la muestra).
+
+Se rechaza la hipótesis nula, entonces no es una matriz de identidad. 
+
+
+## PASO 3: Calcular Análisis Factorial Exploratorio
+
+### 3.1 Determinación del Número de Factores que vamos a SOLICITAR
+
+Ambos métodos ayudan a identificar un número razonable de factores, equilibrando entre maximizar la varianza explicada y minimizar el número de dimensiones.
+
+```{r}
+scree(subdata, 
+      pc=FALSE, 
+      factors=TRUE)
+```
+
+O también el análisis paralelo (utiliza simulaciones con bootstrap). En este caso explícitamente nos recomienda un número de factores.
+
+```{r}
+fa.parallel(subdata,fa="fa") 
+```
+
+### 3.2 Cálculo de los factores
+
+Aplicamos el siguiente código que ejecuta un EFA en nuestra **subdata**.
+
+```{r}
+factorial <- fa(subdata,
+                nfactors = 3, 
+                rotate = "varimax", 
+                cor = 'mixed',
+                fm="minres") 
+```
+
+## PASO 4: Analizar el EFA calculado
+
+### 4.1 Variabilidad explicada
+
+En este caso vemos que dos factores me permiten explicar 0.6891715, es decir el **68.91% de la variabilidad original**. 
+
+```{r}
+print(factorial$Vaccounted)
+```
+
+### 4.2 Los loadings o cargas 
+
+```{r}
+print(factorial$loadings)
+```
+Podemos también VISUALIZAR con un corte a un determinado punto. Como en este caso tenemos valores alto vamos a tratar con 0.5.
+
+```{r}
+print(factorial$loadings,cutoff = 0.5)
+```
+
+Vemos los factores creados:
+```{r}
+fa.diagram(factorial) # cut=.3 por default y sale siempre una asociación según el mayor loading. 
+```
+
+```{r}
+data_sin_na = violencia |> select(1:6,10,11,13)
+data_sin_na = na.omit(data_sin_na)
+```
+
+Añadimos los factores creados a la base original:
+```{r message=FALSE, warning=FALSE}
+factorial_DI<-as.data.frame(factorial$scores)
+head(factorial_DI)
+summary(factorial_DI)
+
+library(BBmisc)
+factorial_DI$demografico = normalize(factorial_DI$MR1, 
+                       method = "range", 
+                       margin=2, # by column
+                       range = c(0, 100))
+factorial_DI$demografico = round(factorial_DI$demografico, 2)
+
+factorial_DI$sociopolitico = normalize(factorial_DI$MR2, 
+                       method = "range", 
+                       margin=2, # by column
+                       range = c(0, 100))
+factorial_DI$sociopolitico = round(factorial_DI$sociopolitico, 2)
+
+factorial_DI$socioeconomico = normalize(factorial_DI$MR3, 
+                       method = "range", 
+                       margin=2, # by column
+                       range = c(0, 100))
+factorial_DI$socioeconomico = round(factorial_DI$socioeconomico, 2)
+```
+
+### 4.3 Exploramos
+
+```{r}
+data_final=cbind(data_sin_na, factorial_DI)
+data_final[,c(10:12)] = NULL
+```
+
+```{r message=FALSE, warning=FALSE}
+library(kableExtra)
+library(tidyverse)
+```
+
+```{r}
+kable(data_final[,c(1,10,11,12)], format = "html", digits = 2, caption = "Tabla de base de datos") |> 
+kable_styling(bootstrap_options = "striped", full_width = F, font_size = 14)  |> 
+                row_spec(0,bold = T, color = "white", background = "grey")
+```
+
+Gráfico de factores demográficos y sociopolíticos filtrados por Perú:
+```{r warning=FALSE}
+library(ggrepel)
+data_final |> 
+  ggplot() +
+  aes(x=demografico, y=sociopolitico, label= Pais) +
+  geom_point() + 
+  geom_text_repel(aes(label = Pais), size = 3)+
+  geom_point(data=data_final |> filter(Pais=="Peru"), 
+             aes(x=demografico,y=sociopolitico, label= Pais), 
+             color='red',
+             size=3) +
+  theme_classic()
+
+data_final |> 
+  ggplot() +
+  aes(x=demografico, y=socioeconomico, label= Pais) +
+  geom_point() + 
+  geom_text_repel(aes(label = Pais), size = 3)+
+  geom_point(data=data_final |> filter(Pais=="Peru"), 
+             aes(x=demografico,y=socioeconomico, label= Pais), 
+             color='red',
+             size=3) +
+  theme_classic()
+```
+
+## 5 Evaluación del EFA
+
+Root Mean Square Error of Approximation
+
+El RMSEA evalúa qué tan bien un modelo se ajusta a los datos, considerando el error de aproximación en la población. Un valor más bajo indica un mejor ajuste. Los valores típicos del RMSEA están en el rango de 0 a 1, donde valores más cercanos a 0 indican un mejor ajuste. 
+
+**Comúnmente, se considera que valores menores a 0.05 indican un buen ajuste, valores entre 0.05 y 0.08 un ajuste razonable, y valores mayores a 0.10 sugieren un pobre ajuste del modelo.**
+
+```{r}
+factorial$RMSEA
+```
+Hay un buen ajuste del modelo
+
+# Análisis por conglomerado jerárquico
+
+Abrimos paquetes que se necesitan para el análisis:
+
+```{r}
+library(pacman) 
+p_load(rio, cluster, factoextra, tidyverse, ggrepel, scatterplot3d) 
+```
+
+```{r}
+subdata2 <- data.frame(violencia, row.names = 'Pais')
+```
+
+```{r}
+subdata2 <- subdata2 |> select(2,11,12)
+subdata2 = na.omit(subdata2) 
+
+library(dplyr)
+subdata2 <- mutate_all(subdata2, as.numeric)
+```
+
+
+## PASO 1: Cálculo
+
+### 1.1. Calculamos las distancias
+
+```{r}
+distancias= daisy(subdata2, metric="gower")
+```
+
+```{r}
+fviz_nbclust(subdata2, hcut,diss=distancias,method = "gap_stat",k.max = 10,verbose = F)
+```
+
+
+```{r}
+aglomerativo = hcut(distancias, k = 3,hc_func='agnes',hc_method = "ward.D") 
+```
+
+```{r}
+divisivo = hcut(distancias, k = 3,hc_func='diana')
+```
+
+## PASO 2: Validación e identificación de casos mal clasificados
+
+### 2.1. Gráfico de silueta
+```{r}
+fviz_silhouette(aglomerativo, label=TRUE)
+```
+
+```{r}
+fviz_silhouette(divisivo, label=TRUE)
+```
+
+### 2.2. Vemos los casos con tendencia negativa
+```{r}
+aglomerativo$silinfo$widths %>% data.frame() %>% filter(sil_width<0)
+```
+
+```{r}
+divisivo$silinfo$widths %>% data.frame() %>% filter(sil_width<0)
+```
+
+## PASO 3: Visualización
+
+### 3.1. Dendograma
+```{r}
+fviz_dend(divisivo, 
+          rect = TRUE, 
+          cex = 0.5)
+```
+
+```{r}
+library(igraph)
+fviz_dend(divisivo, k=3, color_labels_by_k = T, type = "phylogenic", repel = TRUE)
+```
+
+```{r}
+subdata2$divisivo = divisivo$cluster
+subdata2$divisivo = as.factor(subdata2$divisivo)
+levels(subdata2$divisivo) = c("Menor avance en igualdad de género", "Mayor avance en igualdad de género", "Avance medio en igualdad de género")
+```
+
+```{r}
+fviz_cluster(object = list(data=subdata2[,1:3], cluster = subdata2$divisivo),
+             geom = c("text"), 
+             ellipse.type = "convex", 
+             repel = TRUE, 
+             show.clust.cent = FALSE, ggtheme = theme_minimal())
+```
+
+```{r}
+subdata2 |> 
+  group_by(divisivo) |> 
+  summarise_at(vars("Ind_desigualdad":"derechos_lab"), mean)
+```
+
+Gráfico tridimensional:
+```{r}
+with(subdata,plot3d(subdata2[,1:3], type = "s", size=0.8, col=as.numeric(divisivo)))
+with(subdata,text3d(subdata2[,1:3], texts=rownames(subdata2), pos=4))
+```
+
+
+
+
