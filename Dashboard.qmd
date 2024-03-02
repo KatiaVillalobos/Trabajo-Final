@@ -1,0 +1,435 @@
+---
+title: "Incidencia de violencia de género"
+format: 
+    dashboard:
+      logo: https://www.grupolarabida.org/wp-content/uploads/2020/11/Copia-de-Imagotipo-PUCP-alta_resolucion-1.png
+      theme: 
+        - cosmo
+        - assets/styles/custom.scss
+        - assets/styles/quarto.scss
+      fig-width: 15
+      fig-asp: 0.5
+server: shiny
+---
+
+```{r message=FALSE, warning=FALSE}
+#| context: setup
+library(psych)
+library(tidyverse)
+library(ggrepel)
+library(factoextra)
+library(rio)
+library(tmap)
+library(ggthemes)
+```
+
+```{r message=FALSE}
+#| context: setup
+data_violencia <- import("https://github.com/KatiaVillalobos/Trabajo-Final/raw/main/violencia.xlsx")
+corrupcion <-import("https://github.com/KatiaVillalobos/Trabajo-Final/raw/main/cpi.csv", header = TRUE)
+Gender <- import("https://github.com/KatiaVillalobos/Trabajo-Final/raw/main/P_Data_Extract_From_Gender_Statistics.xlsx")
+
+data("World")
+```
+
+```{r}
+#| context: setup
+data_violencia$PBI = round(data_violencia$PBI, 2)
+data_violencia$`Unemployment, female` = round(data_violencia$`Unemployment, female`, 2)
+
+corrupcion <- corrupcion[, c(1, 4)]
+
+names(corrupcion)[names(corrupcion) == "2022"] <- "corrup_percep"
+names(corrupcion)[names(corrupcion) == "Country / Territory"] <- "Country Name"
+
+# Creamo índice de desigualdad de género 
+
+Gender$Indice = rowMeans(Gender[, 2:15], na.rm=TRUE)
+Gender$Indice = (Gender$Indice)*100
+
+Gender[,-c(1,16)] = NULL
+
+Gender[,2]= replace(Gender[,2], Gender[,2] == "NaN",NA)
+
+Gender$Indice = round(Gender$Indice, 2)
+```
+
+```{r}
+#| context: setup
+violencia <- merge(Gender, data_violencia, by = "Country Name")
+violencia <- merge(corrupcion, violencia, by = "Country Name")
+```
+
+```{r}
+#| context: setup
+colnames(violencia)= c("Pais","corrupcion", "Ind_desigualdad","PBI","IDH", "tasa_alfab",
+                  "tasa_desempleo", "voz_politica",
+                  "auto_repro", "lib_mov", "acceso_finan", "justicia","derechos_lab")
+
+library(Hmisc)
+label(violencia$corrupcion)<-"Percepción de corrupción"
+label(violencia$Ind_desigualdad)<-"Indice de desigualdad de género"
+label(violencia$PBI)<-"Producto Bruto Intero per cápita"
+label(violencia$IDH)<-"Indice de desarrollo humano"
+label(violencia$tasa_alfab)<-"Tasa de alfabetización"
+label(violencia$tasa_desempleo)<-"Tasa de desempleo"
+label(violencia$voz_politica)<-"Voz política"
+label(violencia$auto_repro)<-"Autonomía reproductiva"
+label(violencia$lib_mov)<-"Libertad de movimiento"
+label(violencia$acceso_finan)<-"Acceso a servicios financieros formales"
+label(violencia$justicia)<-"Acceso a justicia"
+label(violencia$derechos_lab)<-"Derechos laborales"
+
+subdata <- violencia |> select(2:6,10,11,13)
+```
+
+```{r}
+#| context: setup
+lista<-violencia |> 
+  select(Pais) |> 
+  distinct() |> 
+  arrange(Pais) |> 
+  drop_na()
+```
+
+# Panorama general
+
+##  {.sidebar}
+
+Este dashboard explora las estadísticas de la incidencia de la violencia de género a nivel mundial. Los datos utilizados en la presente presentación provienen de la [OCDE](https://stats.oecd.org/viewhtml.aspx?datasetcode=GIDDB2019&lang=en), el [World Bank](https://datos.bancomundial.org/indicador), el [PNUD](https://hdr.undp.org/data-center/human-development-index#/indicies/HDI) y el [CPI Index](https://github.com/victorhartman/CPI-CSV-dataset/blob/main/cpi.csv).
+
+```{r}
+selectInput('x', 'X', names(violencia[-1])) 
+selectInput('y', 'Y', names(violencia[-1]), names(violencia)[[2]])
+
+```
+
+------------------------------------------------------------------------
+
+|              |                     |
+|--------------|---------------------|
+| **Integrantes** | Katia Villalobos, Anamilé Velazco, Maria Inés Herrera, Valeria Pinchi |
+| **Curso** | R Intermedio |
+| **Fecha** | Febrero, 2024 |
+
+------------------------------------------------------------------------
+
+::: {.callout-note collapse="true"}
+## Información adicional
+
+Para evaluar la percepción de igualdad de género, creamos un índice aditivo basado en una serie de afirmaciones relacionadas con los derechos y oportunidades de las mujeres en comparación con los hombres. El índice va del 1 al 100, donde un puntaje más cercano a 100 refleja una percepción de igualdad de género más fuerte, mientras que un puntaje más bajo sugiere una percepción de desigualdad de género más pronunciada.
+:::
+
+## Row {height="50%"}
+
+
+```{r message=FALSE}
+#| title: Percepción de desigualdad de género
+
+World <- World[World$name != "Antarctica", ]
+
+Gender$`Country Name`[Gender$`Country Name` == "United States of America"] <- "United States" 
+Gender$`Country Name`[Gender$`Country Name` == "Dominican Republic"] <- "Dominican Rep." 
+Gender$`Country Name`[Gender$`Country Name` == "Democratic Republic of Congo"] <- "Dem. Rep. Congo"
+Gender$`Country Name`[Gender$`Country Name` == "Republic of Congo"] <- "Congo"
+Gender$`Country Name`[Gender$`Country Name` == "Equatorial Guinea"] <- "Eq. Guinea"
+Gender$`Country Name`[Gender$`Country Name` == "Central African Republic"] <- "Central African Rep."
+Gender$`Country Name`[Gender$`Country Name` == "South Sudan"] <- "S. Sudan"
+Gender$`Country Name`[Gender$`Country Name` == "Kyrgyz Republic"] <- "Kyrgyzstan"
+
+world_map_data <- merge(World, Gender, by.x = "name", by.y = "Country Name", all.x = TRUE)
+
+# Generar una paleta de colores en escala
+colors <- colorRampPalette(c("#BD1100", "#ED634A", "#F1C7AF","#93CD6A","#4A8C1C"))(100)
+
+tm_shape(world_map_data) +
+  tm_polygons("Indice", title = "Índice", palette = colors, style = "fixed", breaks = c(0, 25, 50 ,75, 90, 100),
+              popup.vars = c("name", "Indice")) +
+  tm_layout(bg.color = "lightblue3") +
+  tm_basemap(server = "Stamen.TonerLite")   +
+  tmap_mode("view")  +
+  tmap_last()
+```
+
+## Row {height="50%"}
+
+```{r}
+#| title: Relación entre variables 
+plotOutput("plot1")
+```
+
+```{r}
+#| title: Boxplot entre variables 
+plotOutput("plot2")
+```
+
+# Análisis Factorial Exploratorio
+
+##  {.sidebar}
+
+A partir del análisis factorial exploratorio se identifican 3 factores: **demográfico, sociopolítico y económico**. 
+
+|  Factor            |     Variables                |
+|--------------|---------------------|
+| **Demográfico** | Tasa de alfabetización, Índice de Desarrollo Humano y libertad de movimiento |
+| **Sociopolítico** | PBI y percepción de corrupción |
+| **Socioeconómico** | derechos laborales, Percepción de desigualdad de género y acceso a servicios financieros |
+
+
+```{r}
+#| context: setup
+subdata = na.omit(subdata) 
+matrixcor<-cor(subdata)
+```
+
+## Column {width="50%" .tabset}
+
+```{r}
+#| title: Matriz de correlaciones
+cor.plot(matrixcor)
+```
+
+```{r}
+#| title: Parallel Analysis
+fa.parallel(subdata,fa="fa") 
+```
+
+```{r}
+#| context: setup
+factorial <- fa(subdata,
+                nfactors = 3, 
+                rotate = "varimax", 
+                cor = 'mixed',
+                fm="minres") 
+```
+
+```{r}
+#| title: Análisis de factores
+fa.diagram(factorial)
+```
+
+```{r}
+#| context: setup
+data_sin_na = violencia |> select(1:6,10,11,13)
+data_sin_na = na.omit(data_sin_na)
+```
+
+```{r message=FALSE, warning=FALSE}
+#| context: setup
+factorial_DI<-as.data.frame(factorial$scores)
+
+library(BBmisc)
+factorial_DI$demografico = normalize(factorial_DI$MR1, 
+                       method = "range", 
+                       margin=2, # by column
+                       range = c(0, 100))
+factorial_DI$demografico = round(factorial_DI$demografico, 2)
+
+factorial_DI$sociopolitico = normalize(factorial_DI$MR2, 
+                       method = "range", 
+                       margin=2, # by column
+                       range = c(0, 100))
+factorial_DI$sociopolitico = round(factorial_DI$sociopolitico, 2)
+
+factorial_DI$socioeconomico = normalize(factorial_DI$MR3, 
+                       method = "range", 
+                       margin=2, # by column
+                       range = c(0, 100))
+factorial_DI$socioeconomico = round(factorial_DI$socioeconomico, 2)
+```
+
+```{r}
+#| context: setup
+data_final=cbind(data_sin_na, factorial_DI)
+data_final[,c(10:12)] = NULL
+```
+
+## Column {width="50%" .tabset}
+
+```{r warning=FALSE}
+#| title: Factor demográfico y sociopolítico
+library(ggrepel)
+data_final |> 
+  ggplot() +
+  aes(x=demografico, y=sociopolitico, label= Pais) +
+  geom_point() + 
+  geom_text_repel(aes(label = Pais), size = 3)+
+  geom_point(data=data_final |> filter(Pais=="Peru"), 
+             aes(x=demografico,y=sociopolitico, label= Pais), 
+             color='red',
+             size=3) +
+  theme_classic()
+```
+
+```{r warning=FALSE}
+#| title: Factor demográfico y socioeconómico
+library(ggrepel)
+
+data_final |> 
+  ggplot() +
+  aes(x=demografico, y=socioeconomico, label= Pais) +
+  geom_point() + 
+  geom_text_repel(aes(label = Pais), size = 3)+
+  geom_point(data=data_final |> filter(Pais=="Peru"), 
+             aes(x=demografico,y=socioeconomico, label= Pais), 
+             color='red',
+             size=3) +
+  theme_classic()
+```
+
+# Análisis de Conglomerados
+
+```{r}
+#| context: setup
+library(pacman) 
+p_load(rio, cluster, factoextra, tidyverse, ggrepel, scatterplot3d) 
+```
+
+```{r}
+#| context: setup
+subdata2 <- data.frame(violencia, row.names = 'Pais')
+```
+
+```{r}
+#| context: setup
+subdata2 <- subdata2 |> select(2,11,12)
+subdata2 = na.omit(subdata2) 
+
+library(dplyr)
+subdata2 <- mutate_all(subdata2, as.numeric)
+```
+
+```{r}
+#| context: setup
+distancias= daisy(subdata2, metric="gower")
+```
+
+##  {.sidebar}
+
+A partir del análisis por conglomerado jerárquico se identifican tres niveles de avance en igualdad de género. 
+
+------------------------------------------------------------------------
+
+|  Clusters            |     Interpretación                |
+|--------------|---------------------|
+| **Cluster 1** | Bajo acceso a la justicia y a derechos laborales, lo cual refleja una fuerte desigualdad social y económica |
+| **Cluster 2** | Alto índice de igualdad, con acceso adecuado a la justicia y derechos laborales|
+| **Cluster 3** | Percepción de igualdad moderada con un acceso a la justicia limitado |
+
+------------------------------------------------------------------------
+
+Estos resultados sugieren la importancia de políticas efectivas y acceso a la justicia para lograr avances significativos en materia de igualdad de género.
+
+## Column {width="50%" .tabset}
+
+```{r}
+#| context: setup
+aglomerativo = hcut(distancias, k = 3,hc_func='agnes',hc_method = "ward.D") 
+divisivo = hcut(distancias, k = 3,hc_func='diana')
+```
+
+```{r}
+#| title: Dendograma
+fviz_dend(divisivo, 
+          rect = TRUE, 
+          cex = 0.5)
+```
+
+```{r}
+#| title: Dendograma en forma de árbol filogenético
+library(igraph)
+fviz_dend(divisivo, k=3, k_colors = c("#E7B800", "#FC4E07","#00AFBB"), type = "phylogenic", repel = TRUE)
+```
+
+```{r}
+#| context: setup
+subdata2$divisivo = divisivo$cluster
+subdata2$divisivo = as.factor(subdata2$divisivo)
+levels(subdata2$divisivo) = c("Menor avance en igualdad de género", "Mayor avance en igualdad de género", "Avance medio en igualdad de género")
+```
+
+```{r}
+#| title: Gráfico de conglomerados
+fviz_cluster(object = list(data=subdata2[,1:3], cluster = subdata2$divisivo),
+             geom = c("text"), 
+             ellipse.type = "convex", 
+             repel = TRUE, 
+             show.clust.cent = FALSE, ggtheme = theme_minimal())
+```
+
+## Column {width="50%"}
+
+```{r}
+#| title: Tabla con grupos creados
+
+library(DT)
+subdata2 |>
+  arrange(desc(Ind_desigualdad)) |>
+  datatable(
+    colnames = c("Desigualdad", "Acceso a justicia", "Derechos laborales", "Clusters"),
+    options = list(
+      dom = "lrtip", 
+      paging = TRUE,
+      lengthMenu = c(5, 10, 25),
+      pageLength = 10, 
+      scrollY = TRUE
+    ),
+  )
+```
+
+# Data
+
+```{r}
+#| context: server
+output$data <- renderTable({
+  violencia})
+
+```
+
+```{r}
+tableOutput('data')
+```
+
+## Row {height="10%"}
+
+```{r}
+library(downloadthis)
+download_link(
+  link = "https://github.com/KatiaVillalobos/Trabajo-Final/raw/main/Data_violencia_genero.xlsx",
+  button_label = "Descargar data como xlsx",
+  button_type = "danger",
+  has_icon = TRUE,
+  icon = "fa fa-save",
+  self_contained = FALSE
+)
+```
+
+```{r}
+library(downloadthis)
+download_link(
+  link = "https://github.com/KatiaVillalobos/Trabajo-Final/raw/main/Diccionario%20de%20datos.xlsx",
+  button_label = "Diccionario de datos",
+  button_type = "danger",
+  has_icon = TRUE,
+  icon = "fa fa-save",
+  self_contained = FALSE
+)
+```
+
+```{r}
+#| context: server
+
+output$plot1 <- renderPlot({
+ violencia |> 
+    ggplot(aes_string(x=input$x, y=input$y)) + 
+    geom_point(colour = "#2E5A87") +
+    theme_classic()
+})
+
+output$plot2 <- renderPlot({
+  violencia |> 
+    ggplot(aes_string(x=input$x, y=input$y)) +
+    geom_boxplot(fill = "#6B9AC2", color = "black") +  
+    theme_classic()
+})
+```
