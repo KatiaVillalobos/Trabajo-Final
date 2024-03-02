@@ -1,0 +1,463 @@
+---
+title: "Trabajo Final"
+author: "Katia Villalobos, Anamilé Velazco, María Inés Herrera, Valeria Pinchi"
+date: "2024-02-20"
+output:
+  html_document: default
+  pdf_document: default
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(psych)
+library(tidyverse)
+library(ggrepel)
+library(factoextra)
+library(rio)
+```
+
+
+```{r message=FALSE, include=FALSE}
+data_violencia <- import("https://github.com/KatiaVillalobos/Trabajo-Final/raw/main/violencia.xlsx")
+corrupcion <-import("https://github.com/KatiaVillalobos/Trabajo-Final/raw/main/cpi.csv", header = TRUE)
+Gender <- import("https://github.com/KatiaVillalobos/Trabajo-Final/raw/main/P_Data_Extract_From_Gender_Statistics.xlsx")
+```
+
+
+```{r include=FALSE}
+data_violencia$PBI = round(data_violencia$PBI, 2)
+data_violencia$`Unemployment, female` = round(data_violencia$`Unemployment, female`, 2)
+
+corrupcion <- corrupcion[, c(1, 4)]
+
+names(corrupcion)[names(corrupcion) == "2022"] <- "corrup_percep"
+names(corrupcion)[names(corrupcion) == "Country / Territory"] <- "Country Name"
+
+# Creamo índice de desigualdad de género 
+
+Gender$Indice = rowMeans(Gender[, 2:15], na.rm=TRUE)
+Gender$Indice = (Gender$Indice)*100
+
+Gender[,-c(1,16)] = NULL
+
+Gender[,2]= replace(Gender[,2], Gender[,2] == "NaN",NA)
+
+Gender$Indice = round(Gender$Indice, 2)
+```
+
+
+```{r include=FALSE}
+violencia <- merge(Gender, data_violencia, by = "Country Name")
+violencia <- merge(corrupcion, violencia, by = "Country Name")
+```
+
+
+```{r include=FALSE}
+colnames(violencia)= c("Pais","corrupcion", "Ind_desigualdad","PBI","IDH", "tasa_alfab",
+                  "tasa_desempleo", "voz_politica",
+                  "auto_repro", "lib_mov", "acceso_finan", "justicia","derechos_lab")
+names(violencia)
+
+library(Hmisc)
+label(violencia$corrupcion)<-"Percepción de corrupción"
+label(violencia$Ind_desigualdad)<-"Indice de desigualdad de género"
+label(violencia$PBI)<-"Producto Bruto Intero per cápita"
+label(violencia$IDH)<-"Indice de desarrollo humano"
+label(violencia$tasa_alfab)<-"Tasa de alfabetización"
+label(violencia$tasa_desempleo)<-"Tasa de desempleo"
+label(violencia$voz_politica)<-"Voz política"
+label(violencia$auto_repro)<-"Autonomía reproductiva"
+label(violencia$lib_mov)<-"Libertad de movimiento"
+label(violencia$acceso_finan)<-"Acceso a servicios financieros formales"
+label(violencia$justicia)<-"Acceso a justicia"
+label(violencia$derechos_lab)<-"Derechos laborales"
+
+subdata <- violencia |> select(2:6,10,11,13)
+head(subdata)
+```
+
+En el presente estudio, nos proponemos abordar la siguiente pregunta de investigación: ¿Cuáles son los factores sociales, económicos y políticos que están vinculados con la incidencia de la violencia de género a nivel mundial? Nuestro objetivo principal radica en proporcionar información crucial que pueda (1) educar a la sociedad civil, al sector privado y a la población en general sobre los determinantes que influyen en la violencia de género en distintos países, y (2) brindar a los responsables de formular políticas (policy makers) datos fundamentales para la toma de decisiones estratégicas en materia de políticas públicas y la divulgación de información entre la población.
+
+En este contexto, hemos optado por aplicar una técnica de reducción de dimensiones y una técnica de reconocimiento de patrones de datos revisados en el curso: el Análisis Factorial Exploratorio y el Análisis por Conglomerados Jerárquico. Estas herramientas nos permitirán explorar y comprender la compleja interacción entre los factores sociales, económicos y políticos que subyacen a la violencia de género a nivel global, contribuyendo así a una comprensión más profunda de este fenómeno.
+
+
+Gráfico de mapa:
+```{r message=FALSE}
+library(tmap)
+
+data("World")
+
+World <- World[World$name != "Antarctica", ]
+
+Gender$`Country Name`[Gender$`Country Name` == "United States of America"] <- "United States" 
+Gender$`Country Name`[Gender$`Country Name` == "Dominican Republic"] <- "Dominican Rep." 
+Gender$`Country Name`[Gender$`Country Name` == "Democratic Republic of Congo"] <- "Dem. Rep. Congo"
+Gender$`Country Name`[Gender$`Country Name` == "Republic of Congo"] <- "Congo"
+Gender$`Country Name`[Gender$`Country Name` == "Equatorial Guinea"] <- "Eq. Guinea"
+Gender$`Country Name`[Gender$`Country Name` == "Central African Republic"] <- "Central African Rep."
+Gender$`Country Name`[Gender$`Country Name` == "South Sudan"] <- "S. Sudan"
+Gender$`Country Name`[Gender$`Country Name` == "Kyrgyz Republic"] <- "Kyrgyzstan"
+
+world_map_data <- merge(World, Gender, by.x = "name", by.y = "Country Name", all.x = TRUE)
+
+# Generar una paleta de colores en escala
+colors <- colorRampPalette(c("#BD1100", "#ED634A", "#F1C7AF","#93CD6A","#4A8C1C"))(100)
+
+tm_shape(world_map_data) +
+  tm_polygons("Indice", title = "Índice", palette = colors, style = "fixed", breaks = c(0, 25, 50 ,75, 90, 100),
+              popup.vars = c("name", "Indice")) +
+  tm_layout(bg.color = "lightblue3") +
+  tm_basemap(server = "Stamen.TonerLite")   +
+  tmap_mode("view")  +
+  tmap_last()
+```
+
+# Análisis Factorial Exploratorio
+
+Para nuestro análisis factorial exploratorio, hemos examinado la literatura pertinente que aborda los factores asociados a la incidencia de la violencia de género. Dentro de este contexto, hemos identificado los derechos laborales como una variable de relevancia, ya que la violencia de género en el ámbito laboral se reconoce como una transgresión a los derechos humanos de las mujeres. Este fenómeno se vincula estrechamente con el impacto en la salud física y mental de las mujeres, así como en su productividad y desarrollo profesional. Por ende, se establece una relación significativa entre los derechos laborales y la violencia de género (CEPAL).
+
+Además, el acceso a la educación emerge como otro factor necesario para la explicación. Según observaciones de Durán (2019), aunque los riesgos de violencia doméstica suelen ser más prominentes en mujeres con niveles educativos más bajos, aquellas con mayores logros académicos también enfrentan peligros, incluso superiores a los de sus cónyuges. Este fenómeno sugiere la posibilidad de que mujeres con mayor educación puedan denunciar el maltrato con mayor frecuencia, mientras que aquellas con menor nivel educativo, especialmente en entornos rurales, podrían denunciar menos sus experiencias.
+
+Asimismo, el acceso a servicios financieros juega un papel relevante. Según hallazgos de Demirgüc-Kunt et al. (2013), persisten disparidades significativas entre hombres y mujeres en cuanto a la tenencia de cuentas bancarias, ahorros y acceso al crédito, tanto en el ámbito formal como en el informal. Estas disparidades se mantienen incluso después de ajustar por factores como ingresos, educación, tipo de empleo, ubicación geográfica y edad. Se observa que en países donde la violencia contra las mujeres es más prevalente, un menor porcentaje de mujeres posee cuentas bancarias, ahorros o créditos formales (p. 23).
+
+La percepción de la corrupción también se revela como una variable importante. La corrupción plantea barreras significativas para el acceso a la justicia, especialmente para poblaciones vulnerables como las mujeres, en casos de delitos como la violencia de género (ONU MUJERES 2018, IDEHPUCP 2018). Existe un porcentaje no despreciable de casos que no ingresan al sistema debido a factores relacionados con las víctimas o a la responsabilidad de los funcionarios públicos encargados del sistema de justicia (IDEHPUCP 2018).
+
+Además, la percepción de la corrupción parece influir en el acceso a la justicia, el cual se ve afectado por el acceso a otros conjuntos de derechos, como los servicios financieros, lo que a su vez merma la autonomía y capacidad de toma de decisiones de las mujeres. Autores como Demirgüc-Kunt et al. (2013) también señalan la importancia de considerar factores estructurales económicos, sociales y políticos que inciden directamente en la violencia de género en los países.
+
+Basándonos en estas consideraciones, **hemos decidido integrar las siguientes variables en nuestro estudio**:
+
+1. Percepción de la corrupción (corrupcion): medida en una escala de cero (indicativo de alta corrupción) a 100 (indicativo de muy baja corrupción).
+2. Índice de desigualdad (Ind_desigualdad): un índice compuesto por 14 variables que reflejan percepciones de desigualdades de género en diferentes países.
+3. Producto Bruto Interno (PBI).
+4. Índice de Desarrollo Humano (IDH).
+5. Tasa de alfabetismo (tasa_alfab).
+6. Libertad de movimiento (lib_mov): porcentaje de mujeres dentro del total de personas que declaran no sentirse seguras caminando solas por la noche en sus áreas de residencia.
+7. Acceso a servicios financieros (acceso_finan): porcentaje de mujeres de 15 años en adelante que poseen una cuenta en una institución financiera.
+8. Derechos laborales (derechos_lab): porcentaje de mujeres con acceso a derechos laborales.
+
+## PASO 1: Análisis exploratorio de datos
+
+### 1.1. Summary y análisis visual
+
+omitimos los datos perdidos:
+```{r}
+subdata = na.omit(subdata) 
+```
+
+Hacemos un análisis de correlación:
+```{r}
+matrixcor<-cor(subdata)
+matrixcor
+```
+
+```{r}
+cor.plot(matrixcor)
+```
+
+```{r}
+library(ggcorrplot)
+ggcorrplot(matrixcor,colors = c("#ff0000", "white", "#0000ff"))
+```
+
+## PASO 2: Verificación de supuestos sobre la matrixcor
+
+### 2.1. Kaiser-Meyer-Olkin (KMO)
+
+```{r}
+psych::KMO(subdata) # Vemos el Overall MSA =  0.78
+```
+
+### 2.2 Prueba de Esfericidad de Bartlett
+
+-   La matriz de correlaciones NO debe ser una matriz de identidad.
+
+-   Esto quiere decir que tendrá 1 en la diagonal y todo lo demás será 0, lo que indicaría que no hay asociación entre las variables.
+
+Realizamos una prueba de hipótesis. Debemos preguntarnos, el p-value es menor a 0.05? (escenario deseable)
+
+```{r}
+cortest.bartlett(matrixcor,n=dim(subdata)[1])
+```
+
+Vemos el p-valor y lo aplicamos sobre las siguientes hipótesis:
+
+H0: Es una matriz de identidad (Las variables analizadas NO están correlacionadas en la muestra).
+
+H1: No es una matriz de identidad (Las variables analizadas SÍ están correlacionadas en la muestra).
+
+Se rechaza la hipótesis nula, entonces no es una matriz de identidad. 
+
+
+## PASO 3: Calcular Análisis Factorial Exploratorio
+
+### 3.1 Determinación del Número de Factores que vamos a SOLICITAR
+
+```{r}
+scree(subdata, 
+      pc=FALSE, 
+      factors=TRUE)
+```
+
+O también el análisis paralelo (utiliza simulaciones con bootstrap). En este caso explícitamente nos recomienda un número de factores.
+
+```{r}
+fa.parallel(subdata,fa="fa") 
+```
+
+### 3.2 Cálculo de los factores
+
+Aplicamos el siguiente código que ejecuta un EFA en nuestra **subdata**.
+
+```{r}
+factorial <- fa(subdata,
+                nfactors = 3, 
+                rotate = "varimax", 
+                cor = 'mixed',
+                fm="minres") 
+```
+
+## PASO 4: Analizar el EFA calculado
+
+### 4.1 Variabilidad explicada
+
+En este caso vemos que dos factores me permiten explicar 0.6891715, es decir el **68.91% de la variabilidad original**. 
+
+```{r}
+print(factorial$Vaccounted)
+```
+
+### 4.2 Los loadings o cargas 
+
+```{r}
+print(factorial$loadings)
+```
+Podemos también VISUALIZAR con un corte a un determinado punto. Como en este caso tenemos valores alto vamos a tratar con 0.5.
+
+```{r}
+print(factorial$loadings,cutoff = 0.5)
+```
+
+Vemos los factores creados:
+```{r}
+fa.diagram(factorial) # cut=.3 por default y sale siempre una asociación según el mayor loading. 
+```
+
+**Factor demográfico - MR1**: Este factor aborda principalmente tres variables interrelacionadas: la tasa de alfabetización, el índice de desarrollo humano y la libertad de movimiento. Aunque estas variables representan distintas facetas demográficas, convergen en un contexto demográfico común. Por ejemplo, las poblaciones con bajas tasas de alfabetización suelen coincidir con aquellas que tienen un acceso limitado a la educación y una menor cantidad de años de estudio, lo cual es una variable central en la medición del Índice de Desarrollo Humano (IDH). El sentimiento de seguridad de las mujeres al transitar solas por las calles está vinculado estrechamente con la expectativa de vida, ya que este sentimiento refleja los niveles de violencia presentes en la sociedad, lo cual puede impactar en la esperanza de vida de la población en un país determinado.
+
+Una posible explicación de por qué estas variables comparten una varianza común es que mayores niveles de educación tienden a promover un mayor empoderamiento, lo cual puede conducir a un aumento en la activación de las mujeres por sus derechos y a luchas por crear condiciones de seguridad más dignas. Así, se puede entender la conexión entre la tasa de alfabetización, el IDH y el índice de libertad de movimiento. Por otro lado, un bajo nivel de educación perpetúa el status quo donde la realidad no es cuestionada, sino aceptada, lo que fomenta un entorno en el que las prácticas discriminatorias y la violencia contra las mujeres pueden persistir y proliferar. Como señala Durán (2019), existe un mayor riesgo de violencia doméstica en entornos con bajos niveles de educación. Sin embargo, la violencia también puede manifestarse en situaciones donde las mujeres tienen niveles educativos más altos que sus esposos. En estos casos, las mujeres suelen estar más capacitadas para denunciar el maltrato, convirtiéndose en agentes activos que buscan cambiar estas dinámicas.  
+
+**Factor Sociopolítico - MR2**: Para el segundo factor, se presenta un eje sociopolítico donde se vincula el nivel de desarrollo económico de un país, observado en su Producto Interno Bruto (PIB), con la percepción de corrupción existente en el mismo. Una posible explicación que permite entender el vínculo común entre ambas variables es que en sociedades con menor desarrollo económico, pueden existir mayores incentivos para recurrir a prácticas corruptas con el fin de satisfacer necesidades económicas apremiantes. Por otro lado, los países con un PIB más elevado tienden a contar con instituciones más sólidas y sistemas legales mejor establecidos. Estas instituciones suelen disponer de mayores recursos para combatir la corrupción y pueden estar más comprometidas con la transparencia y la rendición de cuentas. Sin embargo, en casos de pobreza extrema, la corrupción a veces se percibe como una vía para sobrevivir o para acceder a recursos escasos.
+
+Dentro de esta comprensión del vínculo entre el nivel socioeconómico y los niveles de corrupción, es posible deducir que en una sociedad con un menor PIB y mayores niveles de corrupción, puede fomentarse más la desigualdad de género. Aunque las mujeres puedan participar en el ámbito profesional y laboral, es necesario implementar políticas que protejan sus derechos individuales y colectivos, a los cuales históricamente no se les ha otorgado la debida importancia. Con instituciones más transparentes y en un contexto de mejor desarrollo económico, es más factible experimentar medidas efectivas de protección para las mujeres, fortaleciendo así su participación plena y equitativa en la sociedad.
+
+**Factor económico - MR3**: El tercer factor que hemos identificado está estrechamente ligado a la esfera económica, abarcando las variables de derechos laborales, índice de desigualdad y acceso financiero. La convergencia en la varianza de estas variables puede entenderse a partir del índice de desigualdad, el cual refleja de manera general un alto nivel de percepción de desigualdad en la sociedad, y puede influir en otros aspectos, como la capacidad de las mujeres para acceder a cuentas financieras y a los derechos laborales. Precisamente, estas variables son fundamentales para el logro de la independencia económica, permitiendo a las mujeres mantener un entorno seguro y promover una mayor equidad en su vida laboral. En los países donde el acceso a recursos financieros y los derechos laborales son limitados, persistirán altos niveles de desigualdad. Numerosos estudios han demostrado que las mujeres enfrentan mayores obstáculos para acceder a servicios financieros en naciones con leyes discriminatorias y normas de género restrictivas, tales como limitaciones en su capacidad para trabajar, ser cabezas de hogar, decidir dónde vivir o heredar bienes. Esto es especialmente relevante en contextos caracterizados por altos niveles de violencia de género o matrimonios infantiles (Demirgüc-Kunt et al., 2013, p. 23).
+
+
+```{r}
+data_sin_na = violencia |> select(1:6,10,11,13)
+data_sin_na = na.omit(data_sin_na)
+```
+
+Añadimos los factores creados a la base original:
+```{r message=FALSE, warning=FALSE}
+factorial_DI<-as.data.frame(factorial$scores)
+head(factorial_DI)
+summary(factorial_DI)
+
+library(BBmisc)
+factorial_DI$demografico = normalize(factorial_DI$MR1, 
+                       method = "range", 
+                       margin=2, # by column
+                       range = c(0, 100))
+factorial_DI$demografico = round(factorial_DI$demografico, 2)
+
+factorial_DI$sociopolitico = normalize(factorial_DI$MR2, 
+                       method = "range", 
+                       margin=2, # by column
+                       range = c(0, 100))
+factorial_DI$sociopolitico = round(factorial_DI$sociopolitico, 2)
+
+factorial_DI$socioeconomico = normalize(factorial_DI$MR3, 
+                       method = "range", 
+                       margin=2, # by column
+                       range = c(0, 100))
+factorial_DI$socioeconomico = round(factorial_DI$socioeconomico, 2)
+```
+
+### 4.3 Exploramos
+
+```{r}
+data_final=cbind(data_sin_na, factorial_DI)
+data_final[,c(10:12)] = NULL
+```
+
+Gráfico de factores demográficos y sociopolíticos filtrados por Perú:
+```{r warning=FALSE}
+library(ggrepel)
+data_final |> 
+  ggplot() +
+  aes(x=demografico, y=sociopolitico, label= Pais) +
+  geom_point() + 
+  geom_text_repel(aes(label = Pais), size = 3)+
+  geom_point(data=data_final |> filter(Pais=="Peru"), 
+             aes(x=demografico,y=sociopolitico, label= Pais), 
+             color='red',
+             size=3) +
+  theme_classic()
+
+data_final |> 
+  ggplot() +
+  aes(x=demografico, y=socioeconomico, label= Pais) +
+  geom_point() + 
+  geom_text_repel(aes(label = Pais), size = 3)+
+  geom_point(data=data_final |> filter(Pais=="Peru"), 
+             aes(x=demografico,y=socioeconomico, label= Pais), 
+             color='red',
+             size=3) +
+  theme_classic()
+```
+
+## PASO 5: Evaluación del EFA
+
+Root Mean Square Error of Approximation
+
+**Comúnmente, se considera que valores menores a 0.05 indican un buen ajuste, valores entre 0.05 y 0.08 un ajuste razonable, y valores mayores a 0.10 sugieren un pobre ajuste del modelo.**
+
+```{r}
+factorial$RMSEA
+```
+Hay un buen ajuste del modelo
+
+# Análisis por conglomerado jerárquico
+
+Abrimos paquetes que se necesitan para el análisis:
+
+```{r}
+library(pacman) 
+p_load(rio, cluster, factoextra, tidyverse, ggrepel, scatterplot3d) 
+```
+
+```{r}
+subdata2 <- data.frame(violencia, row.names = 'Pais')
+```
+
+```{r}
+subdata2 <- subdata2 |> select(2,11,12)
+subdata2 = na.omit(subdata2) 
+
+library(dplyr)
+subdata2 <- mutate_all(subdata2, as.numeric)
+```
+
+
+## PASO 1: Cálculo
+
+### 1.1. Calculamos las distancias
+
+```{r}
+distancias= daisy(subdata2, metric="gower")
+```
+
+```{r}
+fviz_nbclust(subdata2, hcut,diss=distancias,method = "gap_stat",k.max = 10,verbose = F)
+```
+
+
+```{r}
+aglomerativo = hcut(distancias, k = 3,hc_func='agnes',hc_method = "ward.D") 
+```
+
+```{r}
+divisivo = hcut(distancias, k = 3,hc_func='diana')
+```
+
+## PASO 2: Validación e identificación de casos mal clasificados
+
+### 2.1. Gráfico de silueta
+```{r}
+fviz_silhouette(aglomerativo, label=TRUE)
+```
+
+```{r}
+fviz_silhouette(divisivo, label=TRUE)
+```
+
+### 2.2. Vemos los casos con tendencia negativa
+```{r}
+aglomerativo$silinfo$widths %>% data.frame() %>% filter(sil_width<0)
+```
+
+```{r}
+divisivo$silinfo$widths %>% data.frame() %>% filter(sil_width<0)
+```
+
+## PASO 3: Visualización
+
+### 3.1. Dendograma
+```{r}
+fviz_dend(divisivo, 
+          rect = TRUE, 
+          cex = 0.5)
+```
+
+```{r}
+library(igraph)
+fviz_dend(divisivo, k=3, color_labels_by_k = T, type = "phylogenic", repel = TRUE)
+```
+
+```{r}
+subdata2$divisivo = divisivo$cluster
+subdata2$divisivo = as.factor(subdata2$divisivo)
+levels(subdata2$divisivo) = c("Menor avance en igualdad de género", "Mayor avance en igualdad de género", "Avance medio en igualdad de género")
+```
+
+```{r}
+fviz_cluster(object = list(data=subdata2[,1:3], cluster = subdata2$divisivo),
+             geom = c("text"), 
+             ellipse.type = "convex", 
+             repel = TRUE, 
+             show.clust.cent = FALSE, ggtheme = theme_minimal())
+```
+
+```{r}
+library(dplyr)
+library(data.table)
+
+Tabla = subdata2 |> 
+  group_by(divisivo) |> 
+  summarise_at(vars(Ind_desigualdad:derechos_lab), mean) |> 
+  arrange(desc(Ind_desigualdad))
+Tabla = as.data.table(Tabla)
+Tabla
+```
+
+**Mayor avance en igualdad de género**: Para este cluster se observa un alto índice de igualdad, un alto nivel de acceso a la justicia y un alto nivel de acceso a derechos laborales, en comparación con el promedio. Este segundo cluster agrupa a los países que donde se percibe un alto nivel de igualdad, casi 90% y este percepción se sustenta sobre un mayor índice de acceso a la justicia donde las mujeres pueden recurrir a mecanismos que defiendad su integridad y bienestar; y también muestra mayor acceso a derechos laborales bajo los cuáles las mujeres pueden estar protegidas en su entorno laboral y así fomentar su desarrollo profesional, empoderamiento e independencia económica. En este contexto se muestra que hay prácticas constantes que luchan contra la desigualdad percibida y gracias a las cuáles las mujeres cuentan con una mayor paridad en las esferas sociales y económicas. 
+
+**Avance medio de en igualdad de género**: Se observa un  nivel considerablemente alto de igualdad, con un nivel bajo de acceso a la justicia (pues presenta un índice promedio similar al cluster de menor avance de igualdad de género) y un nivel medianamente alto en el índice de derechos laborales. En estos casos se puede observar que se percibe la sociedad como más igualitaria entre hombre y mujeres, posiblemente debido a políticas de mayor protección a las mujeres en derechos laborales que les permitió mejor posicionamiento en el aspecto económico. Sin embargo, a partir del bajo índice de acceso a la justicia podemos inferir que los mecanismos que promueven el cumplimiento de estas políticas y derechos es inefectivo y poco accesible, lo que en realidad solo permite que se perpetúen las desigualdades de género. Pues si bien se pueden haber generar avances en término políticos, sin una estructura institucional capaz de hacer ejercer el respeto hacía las nuevas medidas la igualdad se mantendría más como una característica ideacional pero no empírica, dificultando los efectos reales de estos avances en la población. 
+
+**Menor avance de igualdad de género**: Para este cluster se observa un nivel bajo de igualdad de género, un bajo nivel de acceso a  la justicia y un bajo nivel de acceso a derechos laborales. Este cluster agrupa a todos los países donde se percibe una fuerte desigualdad, que también se manifiesta así mismo en las esferas sociales y económicas. Pues la sociedad percibe la desigualdad y la perpetua al haber un bajo índice de acceso a la justicia, lo que signfica que no hay instituciones capaces de ejercer protección y bienestar hacía los grupos vulunerados.Y también se observa un bajo acceso a derechos laborales, frente a esta se crean condiciones más difíciles para las mujeres de poder ganar independencia económica y salir de la situaciones de abuso de poder. De esta manera es un ciclo, pues sin ningún cambio solo se seguirá manteniendo las dinámicas que agrandan la brecha de igualdad entre hombres y mujeres.  
+
+# Bibliografía
+
+Arbulú, F. y Heras, S. (2019). Género e Inclusión Financiera. Documento de trabajo. Superintendencia de Banca, Seguros y Administradoras Privadas de Fondos de Pensiones. https://www.sbs.gob.pe/Portals/0/jer/DDT_ANO2019/DT-002-2019.pdf.
+
+Biroli, F. (2018). Violence against Women and Reactions to Gender Equality in Politics. Politics & Gender, 14, 681 - 685.
+
+Comité Interinstitucional para la Igualdad de Género en las Entidades Financieras. (CIIIGEF). (2022). Diagnóstico de la incorporación de la perspectiva de género en el quehacer de las entidades financieras en México. Documento de trabajo. Ciudad de México. http://cedoc.inmujeres.gob.mx/documentos_download/101364.pdf
+
+De La Cruz, S. (2006). “Análisis de la relación: la mujer en la educación y el trabajo”. Fundamentos en Humanidades, número 1, pp. 271-292. https://www.redalyc.org/pdf/184/18400717.pdf
+
+De Maio, F., & Ansell, D. (2018). As natural as the air around us: On the origin and development of the concept of structural violence in health research. International Journal of Health Services, 48(4), 749–759. https:// doi.org/10.1177/0020731418792825
+
+Demirguc-Kunt, A.; Klapper, L. y Singer, D. (2013). Financial inclusion and legal discrimination against women. Policy Research Working Paper 6416. The World Bank. https://openknowledge.worldbank.org/server/api/core/bitstreams/fb432537-9b99-56fc-8317-56d9863bfb50/content
+
+Durán, R. L. (2019). ¿Más educadas, más empoderadas? Complementariedad entre escolaridad y empleo en la probabilidad de violencia doméstica contra las mujeres en el Perú. En W. Hernández Breña (Ed.), Violencias contra las Mujeres. La necesidad de un doble plural (pp. 117-146). Grupo de Análisis para el Desarrollo (GRADE).
+
+Farmer, P. E., Nizeye, B., Stulac, S., & Keshavjee, S. (2006). Structural violence and clinical medicine. PLoS Medicine, 3(10), e449. https://doi.org/10.1371/journal.pmed.0030449
+
+Murshid, N. S.; Akincigil, A.; Zippay, A. (2015). Microfinance Participation and Domestic Violence in Bangladesh: Results From a Nationally Representative Survey. Journal of Interpersonal Violence, (), 0886260515569065–. doi:10.1177/0886260515569065
+
+Phillips, Anne, The Politics of Presence (Oxford, 1998; online edn, Oxford Academic, 1 Nov. 2003), https://doi.org/10.1093/0198294158.001.0001, accessed 20 Feb. 2024.
+
+Young, Iris Marion. 1990. Justice and the Politics of Difference. Princeton, NJ: Princeton University Press
